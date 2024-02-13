@@ -21,7 +21,7 @@ func TestTid(t *testing.T) {
 	}
 }
 
-const numConcurrentThreads int = 20
+const numConcurrentThreads int = 40
 
 var c chan int = make(chan int, numConcurrentThreads*2)
 
@@ -34,7 +34,7 @@ func readXaction(hf *HeapFile, bp *BufferPool, wg *sync.WaitGroup) {
 		pgCnt1 := hf.NumPages()
 		it, _ := hf.Iterator(tid)
 		cnt1 := 0
-
+		map1 := make(map[string]*Tuple) // key  是 pageNo + slot
 		for {
 			t, err := it()
 			if err != nil {
@@ -45,11 +45,13 @@ func readXaction(hf *HeapFile, bp *BufferPool, wg *sync.WaitGroup) {
 			if t == nil {
 				break
 			}
+			map1[fmt.Sprint(t.Rid)] = t
 			cnt1++
 		}
-
+		// 为什么 cnt1 2031   cnt2 2030 少了一个呢
 		it, _ = hf.Iterator(tid)
 		cnt2 := 0
+		map2 := make(map[string]*Tuple) // key  是 pageNo + slot
 		for {
 			t, err := it()
 			if err != nil {
@@ -60,12 +62,14 @@ func readXaction(hf *HeapFile, bp *BufferPool, wg *sync.WaitGroup) {
 			if t == nil {
 				break
 			}
+			map2[fmt.Sprint(t.Rid)] = t
 			cnt2++
 		}
 		if cnt1 == cnt2 || pgCnt1 != hf.NumPages() {
 			//fmt.Printf("read same number of tuples both iterators (%d)\n", cnt1)
 			c <- 1
 		} else {
+			fmt.Println(diffMap(map1, map2))
 			fmt.Printf("ERROR: read different number of tuples both iterators (%d, %d)\n", cnt1, cnt2)
 			c <- 0
 		}
@@ -73,6 +77,20 @@ func readXaction(hf *HeapFile, bp *BufferPool, wg *sync.WaitGroup) {
 		wg.Done()
 		return
 	}
+}
+
+func diffMap(m1, m2 map[string]*Tuple) (res []Tuple) {
+	for k, v := range m1 {
+		if _, ok := m2[k]; !ok {
+			res = append(res, *v)
+		}
+	}
+	for k, v := range m2 {
+		if _, ok := m1[k]; !ok {
+			res = append(res, *v)
+		}
+	}
+	return res
 }
 
 func writeXaction(hf *HeapFile, bp *BufferPool, writeTuple Tuple, wg *sync.WaitGroup) {
@@ -351,9 +369,9 @@ func TestFiveThreads(t *testing.T) {
 	validateTransactions(t, 5)
 }
 
-// func TestTenThreads(t *testing.T) {
-// 	validateTransactions(t, 10)
-// }
+func TestTenThreads(t *testing.T) {
+	validateTransactions(t, 10)
+}
 
 func TestAllDirtyFails(t *testing.T) {
 	td, t1, _, hf, bp, tid := makeTestVars()

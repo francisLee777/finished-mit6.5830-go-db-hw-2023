@@ -137,7 +137,7 @@ func TestGbyCountAgg(t *testing.T) {
 	sa := CountAggState{}
 	expr := FieldExpr{t1.Desc.Fields[0]}
 	sa.Init("count", &expr, nil)
-
+	// 相当于 select name,count(name) from t1 group by name 结果应该是  name:count  sam:1 geo:3
 	agg := NewGroupedAggregator([]AggState{&sa}, gbyFields, hf)
 	iter, _ := agg.Iterator(tid)
 	fields := []FieldType{

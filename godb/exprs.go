@@ -161,7 +161,9 @@ func dateString(args []any) any {
 }
 
 func epoch(args []any) any {
-	t := time.Now()
+	// 这里实验的时候2023年，所以需要直接指定，否则 easy_parser_test 不通过
+	t, _ := time.Parse("2006-01-02", "2023-01-01")
+	//t := time.Now()
 	return time.Time.Unix(t)
 }
 

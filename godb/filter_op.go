@@ -49,7 +49,9 @@ func newFilter[T constraints.Ordered](constExpr Expr, op BoolOp, field Expr, chi
 // Return a TupleDescriptor for this filter op.
 func (f *Filter[T]) Descriptor() *TupleDesc {
 	// TODO: some code goes here
-	return nil
+	desc := make([]FieldType, 2)
+	desc = append(desc, f.left.GetExprType(), f.right.GetExprType())
+	return &TupleDesc{desc}
 }
 
 // Filter operator implementation. This function should iterate over
@@ -58,5 +60,35 @@ func (f *Filter[T]) Descriptor() *TupleDesc {
 // HINT: you can use the evalPred function defined in types.go to compare two values
 func (f *Filter[T]) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 	// TODO: some code goes here
-	return nil, nil
+	// 过滤后的行
+	iter, err := f.child.Iterator(tid)
+	if err != nil {
+		return nil, err
+	}
+	temp := make([]*Tuple, 0)
+	return func() (*Tuple, error) {
+		for {
+			tuple, err := iter()
+			if err != nil {
+				return nil, err
+			}
+			if tuple == nil {
+				break
+			}
+			v1, err := f.left.EvalExpr(tuple)
+			if err != nil {
+				return nil, err
+			}
+			v2, err := f.right.EvalExpr(tuple)
+			if err != nil {
+				return nil, err
+			}
+			// 使用提供的 getter 函数获取泛型T对象
+			if evalPred(f.getter(v1), f.getter(v2), f.op) {
+				temp = append(temp, tuple)
+				return tuple, nil
+			}
+		}
+		return nil, nil
+	}, nil
 }

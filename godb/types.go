@@ -40,6 +40,7 @@ const (
 	StringLength int = 32
 )
 
+// Page 如何理解Page页，是磁盘存储和内存存储的最小单位，分为 Page 头和体，没有复杂的数据结构，纯字节存储
 type Page interface {
 	//these methods are used by buffer pool to
 	//manage pages

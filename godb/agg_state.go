@@ -69,40 +69,75 @@ func (a *CountAggState) GetTupleDesc() *TupleDesc {
 type SumAggState[T Number] struct {
 	// TODO: some code goes here
 	// TODO add fields that can help implement the aggregation state
+	alias  string
+	expr   Expr
+	sum    T // 理论上可能是 int, float 等，但实际上只有 IntType
+	getter func(DBValue) any
 }
 
 func (a *SumAggState[T]) Copy() AggState {
 	// TODO: some code goes here
-	return nil // TODO change me
+	return &SumAggState[T]{a.alias, a.expr, a.sum, a.getter}
 }
 
 func intAggGetter(v DBValue) any {
 	// TODO: some code goes here
-	return nil // TODO change me
+	intV := v.(IntField)
+	return intV.Value
 }
 
 func stringAggGetter(v DBValue) any {
 	// TODO: some code goes here
-	return nil // TODO change me
+	intV := v.(StringField)
+	return intV.Value
 }
 
 func (a *SumAggState[T]) Init(alias string, expr Expr, getter func(DBValue) any) error {
 	// TODO: some code goes here
-	return nil // TODO change me
+	a.alias = alias
+	a.expr = expr
+	a.sum = 0
+	a.getter = getter
+	return nil
 }
 
 func (a *SumAggState[T]) AddTuple(t *Tuple) {
 	// TODO: some code goes here
+	expr, _ := a.expr.EvalExpr(t)
+	a.sum += a.getter(expr).(T)
 }
 
 func (a *SumAggState[T]) GetTupleDesc() *TupleDesc {
 	// TODO: some code goes here
-	return nil // TODO change me
+	// 直接 cv MaxAggState 的实现
+	var ft FieldType
+	switch any(a.sum).(type) {
+	case string:
+		ft = FieldType{a.alias, "", StringType}
+	default:
+		ft = FieldType{a.alias, "", IntType}
+	}
+	fts := []FieldType{ft}
+	td := TupleDesc{}
+	td.Fields = fts
+	return &td
 }
 
+// Finalize 终结函数，得出结果值
 func (a *SumAggState[T]) Finalize() *Tuple {
 	// TODO: some code goes here
-	return nil // TODO change me
+	// 直接 cv MaxAggState 的实现
+	td := a.GetTupleDesc()
+	var f any
+	switch any(a.sum).(type) {
+	case string:
+		f = StringField{any(a.sum).(string)}
+	default:
+		f = IntField{any(a.sum).(int64)}
+	}
+	fs := []DBValue{f}
+	t := Tuple{*td, fs, nil}
+	return &t
 }
 
 // Implements the aggregation state for AVG
@@ -111,30 +146,63 @@ func (a *SumAggState[T]) Finalize() *Tuple {
 type AvgAggState[T Number] struct {
 	// TODO: some code goes here
 	// TODO add fields that can help implement the aggregation state
+	alias  string
+	expr   Expr
+	sum    T // 不考虑加和溢出
+	count  T // 注释中说明不需要考虑除0问题
+	avg    T // 最后结束的时候再计算, 得到的平均值会生成 Tuple ， 所以只能是 int64
+	getter func(DBValue) any
 }
 
 func (a *AvgAggState[T]) Copy() AggState {
 	// TODO: some code goes here
-	return nil // TODO change me
+	return &AvgAggState[T]{a.alias, a.expr,
+		a.sum, a.count, a.avg, a.getter}
 }
 
 func (a *AvgAggState[T]) Init(alias string, expr Expr, getter func(DBValue) any) error {
 	// TODO: some code goes here
-	return nil // TODO change me
+	a.alias = alias
+	a.expr = expr
+	a.sum = 0
+	a.count = 0
+	a.avg = 0
+	a.getter = getter
+	return nil
 }
 
 func (a *AvgAggState[T]) AddTuple(t *Tuple) {
 	// TODO: some code goes here
+	expr, _ := a.expr.EvalExpr(t)
+	a.sum += a.getter(expr).(T)
+	a.count += 1
 }
 
 func (a *AvgAggState[T]) GetTupleDesc() *TupleDesc {
 	// TODO: some code goes here
-	return nil // TODO change me
+	// 直接 cv MaxAggState 的实现
+	var ft FieldType
+	switch any(a.sum).(type) {
+	case string:
+		ft = FieldType{a.alias, "", StringType}
+	default:
+		ft = FieldType{a.alias, "", IntType}
+	}
+	fts := []FieldType{ft}
+	td := TupleDesc{}
+	td.Fields = fts
+	return &td
 }
 
 func (a *AvgAggState[T]) Finalize() *Tuple {
 	// TODO: some code goes here
-	return nil // TODO change me
+	// 直接 cv MaxAggState 的实现
+	td := a.GetTupleDesc()
+	var f any
+	f = IntField{any(a.sum).(int64) / any(a.count).(int64)}
+	fs := []DBValue{f}
+	t := Tuple{*td, fs, nil}
+	return &t
 }
 
 // Implements the aggregation state for MAX
@@ -207,28 +275,67 @@ func (a *MaxAggState[T]) Finalize() *Tuple {
 type MinAggState[T constraints.Ordered] struct {
 	// TODO: some code goes here
 	// TODO add fields that can help implement the aggregation state
+	alias  string
+	expr   Expr
+	min    T
+	null   bool // whether the agg state have not seen any tuple inputted yet
+	getter func(DBValue) any
 }
 
 func (a *MinAggState[T]) Copy() AggState {
 	// TODO: some code goes here
-	return nil // TODO change me
+	return &MinAggState[T]{a.alias, a.expr, a.min, true, a.getter}
 }
 
 func (a *MinAggState[T]) Init(alias string, expr Expr, getter func(DBValue) any) error {
 	// TODO: some code goes here
-	return nil // TODO change me
+	a.expr = expr
+	a.getter = getter
+	a.alias = alias
+	return nil
 }
 
 func (a *MinAggState[T]) AddTuple(t *Tuple) {
 	// TODO: some code goes here
+	v, err := a.expr.EvalExpr(t)
+	if err != nil {
+		return
+	}
+	val := a.getter(v).(T)
+	if a.null {
+		a.min = val
+		a.null = false
+	} else if val < a.min {
+		a.min = val
+	}
 }
 
 func (a *MinAggState[T]) GetTupleDesc() *TupleDesc {
 	// TODO: some code goes here
-	return nil // TODO change me
+	var ft FieldType
+	switch any(a.min).(type) {
+	case string:
+		ft = FieldType{a.alias, "", StringType}
+	default:
+		ft = FieldType{a.alias, "", IntType}
+	}
+	fts := []FieldType{ft}
+	td := TupleDesc{}
+	td.Fields = fts
+	return &td
 }
 
 func (a *MinAggState[T]) Finalize() *Tuple {
 	// TODO: some code goes here
-	return nil // TODO change me
+	td := a.GetTupleDesc()
+	var f any
+	switch any(a.min).(type) {
+	case string:
+		f = StringField{any(a.min).(string)}
+	default:
+		f = IntField{any(a.min).(int64)}
+	}
+	fs := []DBValue{f}
+	t := Tuple{*td, fs, nil}
+	return &t
 }
